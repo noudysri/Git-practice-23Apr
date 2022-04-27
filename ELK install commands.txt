@@ -1,5 +1,6 @@
 apt-get update 
 apt-get upgrade
+apt-get updatee
 
 sudo apt install openjdk-8-jdk  // install JDK 8
 
@@ -7,13 +8,13 @@ java -version //check the version
 
 --- Add Elastic repository to ubuntu
 
-sudo wget -q – https://artifacts.elastic.co/GPG-KEY-elasticsearch | sudo apt-key add –
+sudo wget -q â€“ https://artifacts.elastic.co/GPG-KEY-elasticsearch | sudo apt-key add â€“
 
 sudo echo deb https://artifacts.elastic.co/packages/5.x/apt stable main | sudo tee -a /etc/apt/sources.list.d/elastic-5.x.list
 
 sudo apt-get update
 
---- We will need an SSL certificate later for Nginx, so let’s create a self-signed certificate now. First create the directories for the private key and certificate:
+--- We will need an SSL certificate later for Nginx, so letâ€™s create a self-signed certificate now. First create the directories for the private key and certificate:
 
 sudo mkdir -p /etc/pki/tls/certs
 
