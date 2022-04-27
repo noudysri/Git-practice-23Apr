@@ -1,0 +1,207 @@
+apt-get update 
+apt-get upgrade
+
+sudo apt install openjdk-8-jdk  // install JDK 8
+
+java -version //check the version
+
+--- Add Elastic repository to ubuntu
+
+sudo wget -q – https://artifacts.elastic.co/GPG-KEY-elasticsearch | sudo apt-key add –
+
+sudo echo deb https://artifacts.elastic.co/packages/5.x/apt stable main | sudo tee -a /etc/apt/sources.list.d/elastic-5.x.list
+
+sudo apt-get update
+
+--- We will need an SSL certificate later for Nginx, so let’s create a self-signed certificate now. First create the directories for the private key and certificate:
+
+sudo mkdir -p /etc/pki/tls/certs
+
+sudo mkdir /etc/pki/tls/private
+
+---- Open the openSSL configuration file:
+
+vi /etc/ssl/openssl.cnf 
+
+Change the IP: <address> to the IP of the ELK server
+subjectAltName = IP: X.X.X.X
+
+-- Generate the certificate and key:
+cd /etc/pki/tls
+sudo openssl req -config /etc/ssl/openssl.cnf -x509 -days 3650 -batch -nodes -newkey rsa:4096 -keyout private/ELK-Stack.key -out certs/ELK-Stack.crt
+
+--Install the elastic search
+sudo apt-get -y install elasticsearch
+vi /etc/elasticsearch/elasticsearch.yml  //open the config file 
+
+-- Uncomment/edit the following line to lock access down to the localhost:
+network.host: localhost
+
+-- start and enable the service
+sudo service elasticsearch restart
+sudo systemctl enable elasticsearch
+
+--verify the elasticsearch is running 
+wget http://localhost:9200/  or curl localhost:9200
+
+-----INSTALLING KIBANA----
+sudo apt-get -y install kibana
+-- edit vi /etc/kibana/kibana.yml
+--- Uncomment/edit the following line to lock access down to the localhost:
+server.host: "localhost"
+
+--restart/enable the service 
+sudo service kibana restart
+sudo systemctl enable kibana
+
+-- verify the kibana is running
+curl localhost:5601
+
+-- Install NGINX ---
+sudo apt-get install -y nginx apache2-utils
+
+-- Create a user account for the basic authentication
+
+sudo htpasswd -c /etc/nginx/htpasswd.users kibanaadmin
+
+---- Next wipe the nginx configuration file and then open it:
+
+sudo truncate -s 0 /etc/nginx/sites-available/default
+sudo vi /etc/nginx/sites-available/default   ///Add the following configuration file
+
+server {
+        listen 80 default_server; # Listen on port 80
+        server_name X.X.X.X; # Bind to the IP address of the server
+        return         301 https://$server_name$request_uri; # Redirect to 443/SSL
+   }
+ 
+    server {
+        listen 443 default ssl; # Listen on 443/SSL
+ 
+        # SSL Certificate, Key and Settings
+        ssl_certificate /etc/pki/tls/certs/ELK-Stack.crt ;
+        ssl_certificate_key /etc/pki/tls/private/ELK-Stack.key;
+        ssl_session_cache shared:SSL:10m;
+ 
+        # Basic authentication using the account created with htpasswd
+        auth_basic "Restricted Access";
+        auth_basic_user_file /etc/nginx/htpasswd.users;
+ 
+        location / {
+	 # Proxy settings pointing to the Kibana instance
+            proxy_pass http://localhost:5601;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection 'upgrade';
+            proxy_set_header Host $host;
+            proxy_cache_bypass $http_upgrade;
+        }
+    }
+
+
+
+-- start and enable the service
+sudo service nginx restart
+sudo systemctl enable nginx
+
+--Verify Nginx is now working as a proxy for Kibana and the redirect to authentication and IP at port 80
+http://PublicIP in browser
+
+----INSTALLING LOGSTASH -------
+
+sudo apt-get -y install logstash  //install logstash
+
+-- Create and open the Beats input configuration file:  
+
+vi /etc/logstash/conf.d/02-beats-input.conf 
+
+-- add the following 
+
+input {
+  beats {
+    port => 5044
+  }
+}
+
+--- Create and open the syslog filter configuration file:
+
+vi /etc/logstash/conf.d/10-syslog-filter.conf
+
+-- add the following
+
+filter {
+  if [type] == "syslog" {
+    grok {
+      match => { "message" => "%{SYSLOGTIMESTAMP:syslog_timestamp} %{SYSLOGHOST:syslog_hostname} %{DATA:syslog_program}(?:\[%{POSINT:syslog_pid}\])?: %{GREEDYDATA:syslog_message}" }
+      add_field => [ "received_at", "%{@timestamp}" ]
+      add_field => [ "received_from", "%{host}" ]
+    }
+    syslog_pri { }
+    date {
+      match => [ "syslog_timestamp", "MMM  d HH:mm:ss", "MMM dd HH:mm:ss" ]
+    }
+  }
+}
+
+
+---Create and open the Elasticsearch output configuration file:
+
+vi /etc/logstash/conf.d/30-elasticsearch-output.conf
+
+-- add the following
+
+output {
+  elasticsearch {
+    hosts => ["localhost:9200"]
+    sniffing => true
+    manage_template => false
+    index => "%{[@metadata][beat]}-%{+YYYY.MM.dd}"
+    document_type => "%{[@metadata][type]}"
+  }
+}
+
+--- restart the service 
+
+sudo service logstash restart
+sudo systemctl enable logstash
+
+
+_______________-The Elk Stack should now be running and ready to receive data.__________________
+
+--- Installing Filebeat on the ELK server
+
+--Install Filebeat:
+sudo apt-get install filebeat
+
+--Edit the file beat configuration file:
+vi /etc/filebeat/filebeat.yml
+
+-- Edit or add additional paths to log files under the paths: section of the configuration file:
+
+- input_type: log
+ 
+  # Paths that should be crawled and fetched. Glob based paths.
+  paths:
+    - /var/log/auth.log
+    - /var/log/syslog
+    #- /var/log/*
+    #- c:\programdata\elasticsearch\logs\*
+
+--restart and enable the beats service
+
+sudo service filebeat restart
+sudo systemctl enable filebeat
+
+--GO back to Kibana Dashboard
+
+configure the index pattern for Filebeat:  filebeat-*
+
+--And now we are able to search against the filebeat index pattern and view the logs that filebeat is feeding the stack:
+
+-- The stack is now up and ready to start receiving logs from remote machines 
+
+
+
+
+
+
